@@ -1,0 +1,19 @@
+{
+  "timestamp": "2025-11-08T23:40:12.883658Z",
+  "input": "src/data/tempPerCountry",
+  "output": "data_clean/monthly_with_outlier_flags.csv",
+  "summary_csv": "reports/outliers_summary.csv",
+  "params": {
+    "country_col": "country",
+    "year_col": "year",
+    "month_col": "month",
+    "temp_col": "temp_c",
+    "abs_temp_limit": 60.0,
+    "jump_threshold": 15.0,
+    "z_thresh": 3.0,
+    "zrob_thresh": 4.0
+  },
+  "rowcount_input": 433008,
+  "rowcount_output": 433008,
+  "n_flagged_total": 6649
+}
