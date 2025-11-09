@@ -1,4 +1,4 @@
-name: EmissionWiz
+name: ClimateWiz
 channels:
   - conda-forge
 dependencies:

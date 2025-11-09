@@ -8,10 +8,10 @@ DATA_CSV = Path("src/data/temperature/temp_per_country/yearly_temp_aggregated/co
 ANOM_CLIP = (-3.0, 3.0)
 
 BLOG_HTML = """
-<h1 style="margin: 0 0 8px 0;">What is EmissionWiz?</h1>
+<h1 style="margin: 0 0 8px 0;">What is ClimateWiz?</h1>
 <p style="margin: 0 0 12px 0;">
-  EmissionWiz is an interactive globe that lets you explore how countries have warmed over time.
-  It visualizes either <b>temperature anomalies</b> (change relative to a 1991–2020 baseline)
+  ClimateWiz is an interactive globe that lets you explore how countries have warmed over time.
+  It visualizes either <b>temperature anomalies</b> (change relative to a 1901–2029 baseline)
   or <b>absolute annual temperatures</b>.
 </p>
 <h2 style="margin: 16px 0 6px 0;">How to read the colors</h2>
@@ -19,7 +19,7 @@ BLOG_HTML = """
   <li><b>Blue → White → Red</b>: cooler to warmer along the selected scale.</li>
   <li>
     In <b>Anomaly</b> mode, red means the selected year is warmer than that country’s
-    1991–2020 average; blue means cooler.
+    1901–2029 average; blue means cooler.
   </li>
   <li>In <b>Absolute</b> mode, colors map to actual °C (cold to hot climates).</li>
 </ul>
@@ -43,10 +43,22 @@ BLOG_HTML = """
   </li>
   <li><b>Regional contrasts</b> highlight uneven warming—e.g., high latitudes often warm faster.</li>
 </ul>
+<h2 style="margin: 16px 0 6px 0;">What’s a temperature anomaly?</h2>
+<p style="margin: 0 0 12px 0;">
+  A temperature anomaly is the difference between the selected year’s average temperature and the country’s
+  <b>1901–2029</b> average. <b>ΔT &gt; 0</b> means warmer than that baseline; <b>ΔT &lt; 0</b> means cooler.
+  This makes trends comparable across climates.
+</p>
+<h2 style="margin: 16px 0 6px 0;">How projections are shown</h2>
+<ul style="margin: 0 0 12px 18px;">
+  <li>The globe and charts include values beyond the last observed year when available as <b>projections</b>.</li>
+  <li>In the mini trend chart, the historical line is <b>white</b> and the projection segment is <b>yellow</b>.</li>
+  <li>The year slider starts at the latest observed year (2024) but you can move into the projection years.</li>
+</ul>
 <h2 style="margin: 16px 0 6px 0;">Methodology (short)</h2>
 <ul style="margin: 0 0 12px 18px;">
-  <li>Source: CRU TS v4.09 (country-aggregated annual means).</li>
-  <li>Anomalies: year minus each country’s 1991–2020 mean.</li>
+  <li>Source: CRU TS v4.09 (country-aggregated annual means) with appended projections where available.</li>
+  <li>Anomalies: year minus each country’s 1901–2029 mean.</li>
   <li>Aggregation: monthly to annual means; countries require sufficient monthly coverage.</li>
   <li>Country names are harmonized; small territories may be excluded.</li>
 </ul>
@@ -68,7 +80,7 @@ BLOG_HTML = """
 """
 BLOG_JSON = json.dumps(BLOG_HTML)
 
-st.set_page_config(page_title="EmissionWiz", page_icon="🌍", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="ClimateWiz", page_icon="🌍", layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""
 <style>
 :root, html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; }
@@ -202,7 +214,7 @@ HTML = r"""
 <div class="blog-overlay" id="blog">
   <div class="blog-wrap">
     <div class="blog-bar">
-      <div class="blog-title">EmissionWiz</div>
+      <div class="blog-title">ClimateWiz</div>
       <div class="blog-actions">
         <button id="blogClose">Close</button>
       </div>
@@ -382,21 +394,58 @@ HTML = r"""
     yUnitLab.setAttribute('text-anchor','start');
     yUnitLab.textContent = yUnit;
     gLab.appendChild(yUnitLab);
-    const pathEl = document.createElementNS(ns,'path');
-    let path=''; let penDown=false;
-    data.forEach((v,i)=>{
-      if (v==null || isNaN(v)){ penDown=false; return; }
-      const cmd = penDown ? 'L' : 'M';
-      path += `${cmd}${sx(i).toFixed(2)},${sy(v).toFixed(2)} `;
-      penDown=true;
+    const histPath = document.createElementNS(ns,'path');
+    const projPath = document.createElementNS(ns,'path');
+    
+    [histPath, projPath].forEach(p => {
+      p.setAttribute('fill','none');
+      p.setAttribute('stroke-linecap','round');
+      p.setAttribute('stroke-linejoin','round');
+      p.setAttribute('stroke-width','1.6');
     });
-    pathEl.setAttribute('d', path.trim());
-    pathEl.setAttribute('fill','none');
-    pathEl.setAttribute('stroke','white');
-    pathEl.setAttribute('stroke-opacity','0.9');
-    pathEl.setAttribute('stroke-width','1.6');
+    histPath.setAttribute('stroke','white');
+    histPath.setAttribute('stroke-opacity','0.9');
+    projPath.setAttribute('stroke','yellow');
+    projPath.setAttribute('stroke-opacity','0.95');
+    
+    const firstProjIdx = YEARS.findIndex(y => parseInt(y,10) > 2024);
+    
+    let pathH = '', penH = false;
+    const histEnd = (firstProjIdx === -1 ? data.length : firstProjIdx);
+    for (let i = 0; i < histEnd; i++) {
+      const v = data[i];
+      if (v == null || isNaN(v)) { penH = false; continue; }
+      const cmd = penH ? 'L' : 'M';
+      pathH += `${cmd}${sx(i).toFixed(2)},${sy(v).toFixed(2)} `;
+      penH = true;
+    }
+    histPath.setAttribute('d', pathH.trim());
+    
+    let pathP = '', penP = false;
+    if (firstProjIdx !== -1) {
+      let lastHistIdx = -1;
+      for (let i = histEnd - 1; i >= 0; i--) {
+        const v = data[i];
+        if (v != null && !isNaN(v)) { lastHistIdx = i; break; }
+      }
+      if (lastHistIdx !== -1) {
+        pathP = `M${sx(lastHistIdx).toFixed(2)},${sy(data[lastHistIdx]).toFixed(2)} `;
+        penP = true;
+      }
+      for (let i = firstProjIdx; i < data.length; i++) {
+        const v = data[i];
+        if (v == null || isNaN(v)) { penP = false; continue; }
+        const cmd = penP ? 'L' : 'M';
+        pathP += `${cmd}${sx(i).toFixed(2)},${sy(v).toFixed(2)} `;
+        penP = true;
+      }
+    }
+    projPath.setAttribute('d', pathP.trim());
+    
     const gPlot = document.createElementNS(ns,'g');
-    gPlot.appendChild(pathEl);
+    gPlot.appendChild(histPath);
+    if (pathP.trim().length) gPlot.appendChild(projPath);
+    
     const gAll = document.createElementNS(ns,'g');
     gAll.appendChild(gGrid); gAll.appendChild(gAxis); gAll.appendChild(gLab); gAll.appendChild(gPlot);
     svgEl.appendChild(gAll);
@@ -405,7 +454,7 @@ HTML = r"""
   const DAY_TEX  = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
   const BUMP_TEX = 'https://unpkg.com/three-globe/example/img/earth-topology.png';
   const BG_TEX   = 'https://unpkg.com/three-globe/example/img/night-sky.png';
-  const globe = Globe({ rendererConfig: { antialias: true, alpha: true, logarithmicDepthBuffer: true } })(document.getElementById('root'))
+  const globe = Globe({ rendererConfig: { antialias: true, alpha: true, logarithmicDepthBuffer: true, preserveDrawingBuffer: true } })(document.getElementById('root'))
     .globeImageUrl(DAY_TEX)
     .bumpImageUrl(BUMP_TEX)
     .backgroundImageUrl(BG_TEX)
@@ -567,7 +616,7 @@ HTML = r"""
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `EmissionWiz_${metric}_${YEARS[idx]}.png`;
+    a.download = `ClimateWiz_${metric}_${YEARS[idx]}.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
