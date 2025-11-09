@@ -4,8 +4,8 @@ channels:
 dependencies:
   - python=3.11
   - pip
+  - numpy>=1.26
+  - pandas>=2.2
+  - scikit-learn>=1.4
+  - streamlit>=1.38
   - pytest
-  - re
-  - io
-  - pandas
-  - numpy

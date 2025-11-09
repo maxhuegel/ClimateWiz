@@ -1,45 +1,33 @@
-# EmissionWiz
+# ClimateWiz
 
-EmissionWiz is an interactive 3D globe (Streamlit + Globe.gl/Three.js) to explore yearly warming by country. It supports:
-
+ClimateWiz is an interactive 3D globe (Streamlit + Globe.gl/Three.js) to explore yearly warming by country. It supports:
 - Anomalies (ΔT) relative to the 1901–2029 country baseline
-
 - Absolute annual temperatures (°C)
-
 - Colorblind palette, PNG export, and a country info panel with a mini trend chart (1901–last year in the data)
 
 Target: education & exploration—quick, intuitive views of climate change across countries and decades.
 
 ## Features
-
 - Modes: Anomaly (ΔT) and Absolute (°C)
-
 - Hover: country name; Click: info panel with
-
   - snapshot value for the currently selected year,
-
   - linear trend (°C/decade),
-
   - mini time-series chart (1901–last available year, e.g. 2029)
-
 - Colorblind mode: alternate, daltonism-friendly palette
-
 - Export PNG: save a screenshot of the globe
-
 - Guide: in-app explanation (top-left button)
 
 ## Project Structure
-
 ```
 EmissionWiz/
 ├─ src/
-│  ├─ app/
-│  │  └─ app.py                        # Streamlit app embedding Globe.gl (HTML/JS)
-│  ├─ data/
-│  │  └─ temperature/
-│  │     └─ temp_per_country/
-│  │        └─ yearly_temp_aggregated/
-│  │           └─ country_year.csv     # Annual per-country data (see schema)
+│ ├─ app/
+│ │ └─ app.py # Streamlit app embedding Globe.gl (HTML/JS)
+│ ├─ data/
+│ │ └─ temperature/
+│ │ └─ temp_per_country/
+│ │ └─ yearly_temp_aggregated/
+│ │ └─ country_year.csv # Annual per-country data (see schema)
 └─ ...
 ```
 
@@ -54,23 +42,27 @@ Required columns:
 - `anom` – `temp_c - base` (°C)
 
 Example:
-
 ```
 country,year,temp_c,base,anom
 Albania,1901,10.9,12.3,-1.4
 Albania,1902,11.8,12.3,-0.5
 ...
 ```
-
 The app harmonizes country names (e.g., `Bosnia and Herz.` → `Bosnia-Herzegovinia`) via a JS alias map.
 
-## Installation
-```
-# Optional: conda env
-conda create -n emissionwiz python=3.11 -y
-conda activate emissionwiz
+---
 
-pip install streamlit pandas
+## Installation (Conda)
+
+### 1) Requirements
+- Miniconda/Anaconda installed
+- Optional: `git` if cloning the repo
+
+### 2) Create & activate environment
+Run in the project root (where `environment.yml` is located):
+```bash
+conda env create -f environment.yml
+conda activate ClimateWiz
 ```
 
 ## Run
@@ -108,32 +100,6 @@ const START_YEAR = '2024';
  - The maximum slider year is computed from the last year in the CSV.
 If the slider stops at 2024, the CSV likely does not contain later years or the configured CSV path is wrong.
 
-## Architecture
-
-- Streamlit (Python) loads the CSV with pandas, normalizes names, and builds a JSON payload:
-  - `years`: ordered list of years (strings),
-  - `values.anom[year][country] `and `values.abs[year][country]`,
-  - color clipping ranges for both metrics.
-
-- Streamlit embeds an HTML/JS block with Globe.gl (Three.js) that:
-  - renders Earth, country polygons, borders, atmosphere,
-  - colors polygons based on the current year & metric,
-  - handles click → info panel with a mini SVG chart,
-  - provides colorblind mode and PNG export.
-
-### Diagram
-
-```css
-country_year.csv
-      │
-      ▼
-  pandas (Streamlit)
-      │  payload (years, values, clips, units)
-      ▼
- Streamlit iframe → HTML/JS
-      ▼
-  Globe.gl + UI (buttons, slider, info panel, export)
-```
 
 ## Configuration
 
@@ -169,3 +135,80 @@ In src/app/app.py:
 - Anomalies: `year_value − mean(1901–2029)` per country.
 - Aggregation: monthly → annual means; countries require sufficient monthly coverage.
 - Country harmonization: alias map; some small/disputed territories may be excluded.
+
+## Architecture & Tools
+
+### Overview
+
+ClimateWiz transforms **monthly country temperatures** (~1901–latest data year) into **anomalies relative to the 1991–2020 baseline** and produces **ML forecasts** (monthly, then aggregated to **annual means**). The Streamlit app (embedding Globe.gl/Three.js) visualizes **Anomaly (ΔT)** and **Absolute (°C)**, with a country panel showing **trend (°C/decade)** and a mini time series. For stable multi-step forecasts we use **damping**, **clipping**, and **climatology blending**.
+
+### Dataflow (folders & key scripts)
+
+* **`src/data/temperature/dataset_temp/`** – Raw monthly, country-level data (~1901–…).
+* **Phase 1–2: Cleaning & Baseline**
+
+  * `scripts/compute_climatology_anomalies.py` – Monthly climatology & anomalies.
+  * `scripts/define_reference_period.py` – Set **1991–2020** reference period.
+  * **Output:** `data_clean/*.csv`.
+* **Phase 3: Features & Folds**
+
+  * `scripts/phase3_build_features.py` – Features (sin/cos seasonality, lags 1/12/24, rolling stats 3/12, optional climatology term).
+  * `scripts/phase3_make_folds.py` – Time-aware CV folds (TimeSeriesSplit).
+  * **Output:** `features/features_v*.csv`, `reports/phase3_folds.csv`.
+* **Phase 4: Modeling & Metrics**
+
+  * `scripts/phase4_train_ridge.py` – Ridge (α grid), standardization, **recursive** H-step forecasting; **damping**, **clipping**, **climatology blend** (horizon-dependent).
+  * `scripts/phase4_metrics.py` – Country/global metrics.
+  * **Baselines:** `baselines/*`.
+* **Phase 4–5: Post-processing & App Payload**
+
+  * `scripts/phase4_blend_with_baselines.py`, `scripts/phase5_apply_forecasts_to_country_files.py`.
+  * **Final artifacts:** monthly forecasts + annual aggregates → `models/*`, `reports/*`; app tables such as `src/data/temperature/temp_per_country/yearly_temp_aggregated/country_year.csv`.
+
+### App Architecture (UI)
+
+* **Frontend:** Streamlit (`src/app/app.py`) with `streamlit.components.v1.html` embedding **Globe.gl/Three.js**.
+* **Interaction:** Mode toggle (ΔT/°C), year slider, hover tooltips, click → country panel (snapshot, °C/decade trend, mini chart), **colorblind palette**, PNG export, in-app Guide.
+* **Data access:** Cached CSV payloads for fast first paint; versioned artifacts.
+
+### Core Modeling
+
+* **Targets:** monthly **anomalies**; **annual** values = mean of 12 monthly predictions.
+* **Features (examples):**
+  `sin/cos(2π·month/12)`, `anom_lag_1/12/24`, rolling mean/stdev (3/12), optional **climatology**.
+* **Training:** `TimeSeriesSplit`, `StandardScaler`, Ridge α-grid.
+* **Forecasting:** recursive 1..H with **damping** and **climatology blending** (horizon-weighted model↔climatology), optional **clipping**.
+* **Outputs:** per-country monthly series, blended series, annual aggregates; consistent CSV payloads for the frontend.
+
+### Tools & Environment
+
+* **Python 3.11**, **Conda** (`environment.yml`)
+
+  * Data: `pandas`, `numpy`
+  * ML: `scikit-learn` (Ridge, StandardScaler, TimeSeriesSplit)
+  * App: `streamlit` + Globe.gl/Three.js embed
+  * Tests/CI: `pytest` (basic)
+
+### Reproducibility & Project Layout
+
+```
+ClimateWiz/
+├─ src/
+│  ├─ app/                         # Streamlit + Globe.gl embed
+│  └─ data/temperature/...         # Raw & app data (CSV)
+├─ scripts/                        # Phase 1–5 pipeline
+├─ data_clean/                     # Cleaned tables
+├─ features/                       # Features & folds
+├─ baselines/                      # Climatology/lag baselines
+├─ models/                         # Forecasts & blends
+├─ reports/                        # Folds, metrics, payload
+└─ environment.yml                 # Reproducible environment
+```
+
+### Deployment
+
+* **Local:**
+  `conda env create -f environment.yml && conda activate ClimateWiz`
+  `streamlit run src/app/app.py`
+* **Server:** same setup; provide CSV artifacts (`src/data/...`, `features/`, `reports/`, `models/`).
+* **Performance:** app-level caching, compact CSVs.
