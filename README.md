@@ -1,5 +1,7 @@
 # ClimateWiz
 
+(This project was created as a submission for hAIckathon 2025)
+
 ClimateWiz is an interactive 3D globe (Streamlit + Globe.gl/Three.js) to explore yearly warming by country. It supports:
 - Anomalies (ΔT) relative to the 1901–2029 country baseline
 - Absolute annual temperatures (°C)
