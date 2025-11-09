@@ -97,7 +97,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=False)
-def load_payload(csv_path: Path) -> dict:
+def load_payload(csv_path: Path, mtime: float) -> dict:
     df = pd.read_csv(csv_path)
     req = {"country", "year", "temp_c", "base", "anom"}
     missing = req - set(df.columns)
@@ -121,7 +121,7 @@ def load_payload(csv_path: Path) -> dict:
         "default_metric": "anom"
     }
 
-payload = load_payload(DATA_CSV)
+payload = load_payload(DATA_CSV, DATA_CSV.stat().st_mtime)
 PAYLOAD_JSON = json.dumps(payload)
 
 HTML = r"""
@@ -221,7 +221,7 @@ HTML = r"""
   <div><b id="unit">__UNIT__</b></div>
   <div class="grad" id="gradBar"></div>
   <div class="scale"><span id="minlbl">__MIN__</span><span id="maxlbl">__MAX__</span></div>
-  <input id="range" type="range" min="0" max="__MAXIDX__" value="__MAXIDX__" />
+  <input id="range" type="range" />
   <div id="sel"></div>
 </div>
 
@@ -232,6 +232,7 @@ HTML = r"""
   const CLIPS   = PAYLOAD.clips;
   const UNITS   = PAYLOAD.units;
   const BLOG    = __BLOG__;
+  const START_YEAR = '2024';
 
   const ALIASES = {
     "United States of America": "USA",
@@ -257,8 +258,6 @@ HTML = r"""
   };
 
   let selectedCountry = null;
-  let playing = false;
-  let playTimer = null;
   let scheme = 'normal';
 
   function csvName(neName) {
@@ -422,9 +421,15 @@ HTML = r"""
   globe.controls().addEventListener('end',   () => globe.controls().autoRotate = true);
 
   let metric = PAYLOAD.default_metric || "anom";
-  let idx = YEARS.length - 1;
+  const startIdx = YEARS.indexOf(START_YEAR);
+  let idx = (startIdx !== -1) ? startIdx : (YEARS.length - 1);
   let valueMap = VALUES[metric][YEARS[idx]] || {};
   let colorScale = colorScaleFactory(metric, scheme);
+
+  const rangeEl = document.getElementById('range');
+  rangeEl.min = '0';
+  rangeEl.max = String(YEARS.length - 1);
+  rangeEl.value = String(idx);
 
   function setGradient(){
     const g = document.getElementById('gradBar');
@@ -517,6 +522,7 @@ HTML = r"""
       <div>Trend (linear, 1901–${latestYear}): <b>${slopeStr}</b></div>
       <div style="opacity:.8">Tip: the chart shows the full history; the snapshot follows the year slider.</div>`;
     const xTicks = [YEARS[0], '1950', '2000', latestYear];
+    if (!xTicks.includes(latestYear)) xTicks.push(latestYear);
     const valid = ysFull.filter(v => v != null && !isNaN(v));
     const ymin = Math.min(...valid), ymax = Math.max(...valid);
     const span = (ymax - ymin) || 1e-6;
@@ -549,6 +555,24 @@ HTML = r"""
 
   document.getElementById('btn-anom').onclick = () => applyMetric('anom');
   document.getElementById('btn-abs').onclick  = () => applyMetric('abs');
+  document.getElementById('btn-cb').onclick = () => {
+    scheme = (scheme==='normal') ? 'cb' : 'normal';
+    document.getElementById('btn-cb').textContent = `Colorblind: ${scheme==='cb'?'ON':'OFF'}`;
+    colorScale = colorScaleFactory(metric, scheme);
+    setGradient();
+    applyYear(idx);
+  };
+  document.getElementById('btn-png').onclick = () => {
+    const canvas = globe.renderer().domElement;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `EmissionWiz_${metric}_${YEARS[idx]}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   document.getElementById('range').addEventListener('input', (e) => applyYear(parseInt(e.target.value,10)));
   window.addEventListener('resize', () => { globe.width(window.innerWidth); globe.height(window.innerHeight); });
 
@@ -561,25 +585,6 @@ HTML = r"""
   blogContent.innerHTML = BLOG;
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeBlog(); closeInfo(); } });
   document.getElementById('infoClose').onclick = closeInfo;
-
-  document.getElementById('btn-cb').onclick = () => {
-    scheme = (scheme==='normal') ? 'cb' : 'normal';
-    document.getElementById('btn-cb').textContent = `Colorblind: ${scheme==='cb'?'ON':'OFF'}`;
-    colorScale = colorScaleFactory(metric, scheme);
-    setGradient();
-    applyYear(idx);
-  };
-
-  document.getElementById('btn-png').onclick = () => {
-    const canvas = globe.renderer().domElement;
-    const url = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `EmissionWiz_${metric}_${YEARS[idx]}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
 </script>
 </body>
 </html>
@@ -590,7 +595,6 @@ html(
         .replace("__UNIT__", payload["units"][payload["default_metric"]])
         .replace("__MIN__", str(payload["clips"][payload["default_metric"]][0]))
         .replace("__MAX__", str(payload["clips"][payload["default_metric"]][1]))
-        .replace("__MAXIDX__", str(len(payload["years"]) - 1))
         .replace("__BLOG__", BLOG_JSON),
     height=10,
     scrolling=False
