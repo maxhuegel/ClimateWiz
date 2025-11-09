@@ -1,0 +1,35 @@
+{
+  "timestamp": "2025-11-09T02:49:56.948434Z",
+  "anomalies": "data_clean/monthly_anomalies.csv",
+  "cutoff_freq": "yearly",
+  "horizons_max": 60,
+  "min_history_months": 24,
+  "buckets": [
+    {
+      "name": "h01_03",
+      "h_start": 1,
+      "h_end": 3
+    },
+    {
+      "name": "h04_06",
+      "h_start": 4,
+      "h_end": 6
+    },
+    {
+      "name": "h07_12",
+      "h_start": 7,
+      "h_end": 12
+    },
+    {
+      "name": "h13_24",
+      "h_start": 13,
+      "h_end": 24
+    },
+    {
+      "name": "h25_60",
+      "h_start": 25,
+      "h_end": 60
+    }
+  ],
+  "note": "Pick cutoffs where share_with_both_ok \u2265 0.7 as a rule of thumb."
+}
